@@ -7,15 +7,19 @@ import (
 	"log"
 	"os"
 	"strings"
+	"encoding/json"
+	"net"
 )
 
 type Server struct {
 	flotilla flotilla.DB
 	http *http.Server
+	httpListen *net.Listener
+	log *log.Logger
 }
 
-func NewServer(bindAddr string, dataDir string, flotillaPeers []string, httpPort int) (*Server, error) {
-	log := log.New(os.Stderr, "MerchDB:\t",log.LstdFlags)
+func NewServer(bindAddr string, dataDir string, flotillaPeers []string) (*Server, error) {
+	lg := log.New(os.Stderr, "MerchDB:\t",log.LstdFlags)
 	// start flotilla
 	// peers []string, dataDir string, bindAddr string, ops map[string]Command
 	f,err := flotilla.NewDefaultDB(flotillaPeers, dataDir, bindAddr, ops)
@@ -35,22 +39,33 @@ func NewServer(bindAddr string, dataDir string, flotillaPeers []string, httpPort
 		nil,
 		nil,
 		nil,
-		log}
+		lg}
 
+	httpAddr,err := net.ResolveTCPAddr(bindAddr, "tcp4")
+	if err != nil {
+		return nil,err
+	}
+	httpListen,err := net.ListenTCP("tcp4", httpAddr)
+	if err != nil {
+		return nil,err
+	}
+	s :=  &Server{f,h,httpListen,lg}
+	go func(s *Server) {
 
-	go func() {
-		err := h.ListenAndServe()
+		err := s.h.Serve(httpListen)
+
 		if err != nil {
-			_ = f.Close()
-			log.Fatalf("Error serving http addr %s  : %s", bindAddr,err)
+			_ = s.flotilla.Close()
+			_ = s.httpListen.close()
+			s.lg.Fatalf("Error serving http addr %s  : %s", s.http.Addr,err)
 		}
-	}()
-
-	return &Server{f,h},nil
+	}(s)
+	return s,nil
 
 }
 
 func (s *Server) Close() error {
+	s.httpListen.Close()
 	return s.f.Close()
 }
 
@@ -63,7 +78,7 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 	numCols := len(r.Form)
 	// args for flotilla are rowKey [colKey, colVal]...
 	flotillaArgs := make([][]byte, (numCols*2) + 1)
-	flotillaArgs[] = rowKey
+	flotillaArgs[0] = rowKey
 	i := 1
 	for k,v := range r.Form {
 		flotillaArgs[i] = []byte(k)
@@ -72,21 +87,42 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 		i++
 	}
 	result := <- s.flotilla.Command(PUTCOLS, flotillaArgs)
-	w.Write(result.bytes())
+	response := &PutColsResponse{true,nil}
+	if result.Err != nil {
+		response.Ok = false
+		response.Err = result.Err
+	}
+	w.Header().Add("Content-Type","application-json")
+	enc := json.NewEncoder(w)
+	err := enc.Encode(response)
+	if err != nil {
+		s.lg.Errorf(err)
+	}
+
 }
 
-func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGetCols(lw http.ResponseWriter, r *http.Request) {
 	// last element of resource path is rowKey
+	return
+}
+
+func (s *Server) HandleGetColsFast(lw http.ResponseWriter, r *http.Request) {
+	// last element of resource path is rowKey
+	return
 }
 
 func (s *Server) HandlePutRow(w http.ResponseWriter, r *http.Request) {
-
+	return
 }
 
 func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
+	return
+}
 
+func (s *Server) HandleGetRowFast(w http.ResponseWriter, r *http.Request) {
+	return
 }
 
 func (s *Server) HandleDelRow(w http.ResponseWriter, r *http.Request) {
-
+	return
 }
