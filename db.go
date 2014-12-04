@@ -105,46 +105,46 @@ func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
 // 0: rowKey
 // 1: tableName
 // 2-N: cols to fetch
-func GetCols(args [][]byte, txn flotilla.Txn)([]byte,error) {
+func GetCols(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
 	retSet := make([][]byte,0,0)
 	// key bytes are 4 byte keyLen + keyBytes
+
 	key := make([]byte, len(args[0]) + 4, len(args[0]) + 4)
 	binary.LittleEndian.PutUint32(key,uint32(len(args[0])))
 	copy(key[4:], args[0])
 
-	colsWeWant := args[2:]
+	rowKey := args[0]
+	table := string(args[1])
+	var colsWeWant [][]byte = nil
+	if len(args) > 2 {
+		colsWeWant = args[2:]
+	}
 
+	dbi,err := txn.DBIOpen(&table, flotilla.MDB_CREATE)
+	if err != nil {
+		return nil,err
+	}
+
+	cols,err := getCols(txn, dbi, rowKey, colsWeWant)
+	if err != nil {
+		return nil,err
+	}
+	txn.Abort() // abort since we're not writing
+	return colsBytes(cols)
+}
+
+
+// args:
+// 0: rowKey
+// 1: tableName
+func DelRow(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
+	rowKey := args[0]
 	table := string(args[1])
 	dbi,err := txn.DBIOpen(&table, flotilla.MDB_CREATE)
 	if err != nil {
 		return nil,err
 	}
-	c,err := txn.CursorOpen(dbi)
-	if err != nil {
-		return nil,err
-	}
-	// scan until we find a key that doesn't match our row
-	k,v,err := c.Get(key,uint(0))
-	rowKey,colKey := keyColNames(k)
-
-	for (bytes.Equal(key,rowKey)) {
-		if (matchesAny(colKey,colsWeWant)) {
-			keyVal := [][]byte{colKey,v} // pop size off of key
-			retSet = append(retSet, keyVal...)
-		}
-		k, v, err = c.Get(nil, uint(0))
-		if err != nil {
-			return nil, err
-		}
-		rowKey,colKey = keyColNames(k)
-	}
-
-	return colsBytes(retSet)
-}
-
-
-func DelRow(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
-	return nil,nil
+	return nobytes,delRow(txn, dbi, rowKey)
 }
 
 func ReadCols(key []byte, cols [][]byte, txn flotilla.Txn) ([][]byte, error) {
@@ -155,7 +155,7 @@ func ReadRow(key []byte, txn flotilla.Txn) ([][]byte, error) {
 	return nil,nil
 }
 
-func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) ([][]byte, error) {
+func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
 
 	// key bytes are 4 byte keyLen + keyBytes
 	seekKey := make([]byte, len(rowKey) + 4, len(rowKey) + 4)
@@ -164,7 +164,7 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) ([][]byte, error)
 
 	c,err := txn.CursorOpen(dbi)
 	if err != nil {
-		return nil,err
+		return err
 	}
 	// scan until we find a key that doesn't match our row
 	k,v,err := c.Get(seekKey,uint(0))
@@ -175,18 +175,18 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) ([][]byte, error)
 		// this col belongs to our row, kill it
 		err = txn.Del(dbi, k, nil)
 		if err != nil {
-			return nil,err
+			return err
 		}
 
 		// load next k,v
 		k, v, err = c.Get(nil, uint(0))
 		if err != nil {
-			return nil, err
+			return err
 		}
 		sRowK,sColK = keyColNames(k)
 	}
 
-	return nil,nil
+	return nil
 }
 
 
@@ -275,7 +275,7 @@ type keyVal struct {
 
 // allocates a new []byte to contain the values in cols,
 // passed in cols are slices of 2 bytes, { (key,val), (key,val), (key, val) }
-func colsBytes(cols [][]byte) ([]byte,error) {
+func colsBytes(cols []keyVal) ([]byte,error) {
 	retLength := 4 + (8 * len(cols))
 	for _,keyVal := range(cols) {
 		if (len(keyVal) != 2) {
@@ -291,40 +291,37 @@ func colsBytes(cols [][]byte) ([]byte,error) {
 	written += 4
 	// for each record
 	for _,keyVal := range(cols) {
-		key := keyVal[0]
-		val := keyVal[1]
 
 		// key length, val length
-		binary.LittleEndian.PutUint32(ret[written:], uint32(len(key)))
+		binary.LittleEndian.PutUint32(ret[written:], uint32(len(keyVal.k)))
 		written += 4
-		binary.LittleEndian.PutUint32(ret[written:], uint32(len(key)))
+		binary.LittleEndian.PutUint32(ret[written:], uint32(len(keyVal.v)))
 		written += 4
 		// key, val
-		copy(ret[written:],key)
-		written += len(key)
-		copy(ret[written:],val)
-		written += len(val)
+		copy(ret[written:],keyVal.k)
+		written += len(keyVal.k)
+		copy(ret[written:],keyVal.v)
+		written += len(keyVal.v)
 	}
 	return ret,nil
 }
 
 // wraps byte arrays around columns passed to us
-func bytesCols(in []byte) ([][]byte,error) {
+func bytesCols(in []byte) ([]keyVal,error) {
 	read := 0
 	// read length
 	numCols := binary.LittleEndian.Uint32(in[read:])
 	read += 4
-	ret := make([][]byte, numCols, numCols)
+	ret := make([]keyVal, numCols, numCols)
 	for i := 0 ; i < int(numCols) ; i++ {
 		ret[i] = make([]byte,2,2)
 		keyLen := binary.LittleEndian.Uint32(in[read:])
 		read += 4
 		valLen := binary.LittleEndian.Uint32(in[read:])
 		read += 4
-		ret[i][0] = in[read:read+int(keyLen)]
-		read += keyLen
-		ret[i][1] = in[read:read+int(valLen)]
-		read += valLen
+		k := in[read:read+int(keyLen)]
+		v := in[read:read+int(valLen)]
+		ret[i] = keyVal{k,v}
  	}
 	return ret,nil
 }
