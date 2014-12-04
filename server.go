@@ -70,7 +70,7 @@ func (s *Server) Close() error {
 }
 
 // parses a url formatted like ../tableName/rowKey?col1=val1&col2=val2 into a [][]byte that our flotilla ops will work with
-func parseTableRowCols(r *http.Request) [][]byte {
+func parseTableRowColVals(r *http.Request) [][]byte {
 	// last element of resource path is rowKey
 	pathSplits := strings.Split(r.URL.Path, "/")
 	tableName := []byte(pathSplits[pathSplits.length - 2])
@@ -92,10 +92,32 @@ func parseTableRowCols(r *http.Request) [][]byte {
 	return flotillaArgs
 }
 
+// parses a url formatted like ../tableName/rowKey?col1=whatev&col2=whatever into a [][]byte that our flotilla ops will work with,
+// ignores valuse (intended for getCols requests)
+func parseTableRowColNames(r *http.Request) [][]byte {
+	// last element of resource path is rowKey
+	pathSplits := strings.Split(r.URL.Path, "/")
+	tableName := []byte(pathSplits[pathSplits.length - 2])
+	rowKey := []byte(pathSplits[pathSplits.length - 1])
+
+	// url params are columns
+	numCols := len(r.Form)
+	// args for flotilla are rowKey [colKey, colVal]...
+	flotillaArgs := make([][]byte, numCols + 2)
+	flotillaArgs[0] = rowKey
+	flotillaArgs[1] = tableName
+	i := 1
+	for k,v := range r.Form {
+		flotillaArgs[i] = []byte(k)
+		i++
+	}
+	return flotillaArgs
+}
+
 
 // url is formatted like /tableName/rowKey?col1=val1&col2=val2
 func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
-	flotillaArgs := parseTableRowCols(r)
+	flotillaArgs := parseTableRowColVals(r)
 	result := <- s.flotilla.Command(PUTCOLS, flotillaArgs)
 	response := &PutColsResponse{true,nil}
 	if result.Err != nil {
