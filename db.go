@@ -98,7 +98,17 @@ func PutRow(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 // 0: rowKey
 // 1: tableName
 func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
-	retKeyVals :=
+	rowKey := args[0]
+	table := string(args[1])
+	dbi,err := txn.DBIOpen(&table, flotilla.MDB_CREATE)
+	if err != nil {
+		return nil,err
+	}
+	retKeyVals,err := getCols(txn, dbi, rowKey, nil)
+	if err != nil {
+		return nil,err
+	}
+	return colsBytes(retKeyVals)
 }
 
 // args:
@@ -106,13 +116,6 @@ func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
 // 1: tableName
 // 2-N: cols to fetch
 func GetCols(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
-	retSet := make([][]byte,0,0)
-	// key bytes are 4 byte keyLen + keyBytes
-
-	key := make([]byte, len(args[0]) + 4, len(args[0]) + 4)
-	binary.LittleEndian.PutUint32(key,uint32(len(args[0])))
-	copy(key[4:], args[0])
-
 	rowKey := args[0]
 	table := string(args[1])
 	var colsWeWant [][]byte = nil
@@ -134,6 +137,8 @@ func GetCols(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
 }
 
 
+
+
 // args:
 // 0: rowKey
 // 1: tableName
@@ -145,14 +150,6 @@ func DelRow(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
 		return nil,err
 	}
 	return nobytes,delRow(txn, dbi, rowKey)
-}
-
-func ReadCols(key []byte, cols [][]byte, txn flotilla.Txn) ([][]byte, error) {
-	return nil,nil
-}
-
-func ReadRow(key []byte, txn flotilla.Txn) ([][]byte, error) {
-	return nil,nil
 }
 
 func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
@@ -191,10 +188,15 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
 
 
 func putCols(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte, cols []keyVal) error {
+	var err error = nil
 	for _,col := range cols {
 		putKey := packKeyCol(rowKey,col.k)
-		txn.Put(dbi,putKey,col.v,uint(0))
+		err = txn.Put(dbi,putKey,col.v,uint(0))
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // if cols is nil, returns whole row -- otherwise returns only those with colKeys selected in cols

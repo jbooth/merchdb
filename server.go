@@ -69,16 +69,19 @@ func (s *Server) Close() error {
 	return s.f.Close()
 }
 
-func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
+// parses a url formatted like ../tableName/rowKey?col1=val1&col2=val2 into a [][]byte that our flotilla ops will work with
+func parseTableRowCols(r *http.Request) [][]byte {
 	// last element of resource path is rowKey
 	pathSplits := strings.Split(r.URL.Path, "/")
+	tableName := []byte(pathSplits[pathSplits.length - 2])
 	rowKey := []byte(pathSplits[pathSplits.length - 1])
 
 	// url params are columns
 	numCols := len(r.Form)
 	// args for flotilla are rowKey [colKey, colVal]...
-	flotillaArgs := make([][]byte, (numCols*2) + 1)
+	flotillaArgs := make([][]byte, (numCols*2) + 2)
 	flotillaArgs[0] = rowKey
+	flotillaArgs[1] = tableName
 	i := 1
 	for k,v := range r.Form {
 		flotillaArgs[i] = []byte(k)
@@ -86,6 +89,13 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 		flotillaArgs[i] = []byte(v)
 		i++
 	}
+	return flotillaArgs
+}
+
+
+// url is formatted like /tableName/rowKey?col1=val1&col2=val2
+func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
+	flotillaArgs := parseTableRowCols(r)
 	result := <- s.flotilla.Command(PUTCOLS, flotillaArgs)
 	response := &PutColsResponse{true,nil}
 	if result.Err != nil {
@@ -101,9 +111,20 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (s *Server) HandleGetCols(lw http.ResponseWriter, r *http.Request) {
-	// last element of resource path is rowKey
-	return
+func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
+	flotillaArgs := parseTableRowCols(r)
+	result := <- s.flotilla.Command(PUTCOLS, flotillaArgs)
+	response := &PutColsResponse{true,nil}
+	if result.Err != nil {
+		response.Ok = false
+		response.Err = result.Err
+	}
+	w.Header().Add("Content-Type","application-json")
+	enc := json.NewEncoder(w)
+	err := enc.Encode(response)
+	if err != nil {
+		s.lg.Errorf(err)
+	}
 }
 
 func (s *Server) HandleGetColsFast(lw http.ResponseWriter, r *http.Request) {
