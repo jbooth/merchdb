@@ -134,9 +134,9 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
-	flotillaArgs := parseTableRowCols(r)
+	flotillaArgs := parseTableRowColNames(r)
 	result := <- s.flotilla.Command(PUTCOLS, flotillaArgs)
-	response := &PutColsResponse{true,nil}
+	response := &GetColsResponse{true,nil}
 	if result.Err != nil {
 		response.Ok = false
 		response.Err = result.Err
@@ -149,8 +149,43 @@ func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) HandleGetColsFast(lw http.ResponseWriter, r *http.Request) {
-	// last element of resource path is rowKey
+func (s *Server) HandleGetColsFast(w http.ResponseWriter, r *http.Request) {
+
+	flotillaArgs := parseTableRowColNames(r)
+	txn,err := s.flotilla.Read()
+	if err != nil {
+		return returnErr(w,err)
+	}
+	// rowKey is args[0], tableName is args[1]
+	rowKey := flotillaArgs[0]
+	tableName := string(flotillaArgs[1])
+	colNames := flotillaArgs[2:]
+	dbi,err := txn.DBIOpen(&tableName, flotilla.MDB_CREATE)
+	if err != nil {
+		return returnErr(w,err)
+	}
+	results,err := getCols(txn, dbi, rowKey, colNames)
+
+	response := &GetColsResponse{}
+	if err != nil {
+		response.Ok = false
+		response.Err = err
+		return
+	} else {
+		response.Key = string(rowKey)
+		response.Ok = true
+		response.Cols = make(map[string]string)
+		for _,keyVal := range results {
+			response.Cols[string(keyVal.k)] = string(keyVal.v)
+		}
+	}
+
+	w.Header().Add("Content-Type","application-json")
+	enc := json.NewEncoder(w)
+	err := enc.Encode(response)
+	if err != nil {
+		s.lg.Errorf(err)
+	}
 	return
 }
 
@@ -168,4 +203,9 @@ func (s *Server) HandleGetRowFast(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleDelRow(w http.ResponseWriter, r *http.Request) {
 	return
+}
+
+func returnErr(w http.ResponseWriter, err error) {
+	w.Header(500)
+	w.Write([]byte(err))
 }
