@@ -51,7 +51,7 @@ func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 		return nil,fmt.Errorf("Had odd number of column keyVals on insert to table %s rowKey %s", table, string(rowKey))
 	}
 	keyVals := make([]keyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
-	for i := 0 ; i < int(keyValBytes / 2) ; i++ {
+	for i := 0 ; i < int(len(keyValBytes) / 2) ; i++ {
 		keyVals[i] = keyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
 	}
 	err = putCols(txn, dbi, rowKey, keyVals)
@@ -83,7 +83,7 @@ func PutRow(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 		return nil,fmt.Errorf("Had odd number of column keyVals on insert to table %s rowKey %s", table, string(rowKey))
 	}
 	keyVals := make([]keyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
-	for i := 0 ; i < int(keyValBytes / 2) ; i++ {
+	for i := 0 ; i < int(len(keyValBytes) / 2) ; i++ {
 		keyVals[i] = keyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
 	}
 	err = putCols(txn, dbi, rowKey, keyVals)
@@ -222,7 +222,7 @@ func getCols(txn flotilla.Txn, dbi mdb.DBI, rowKey []byte, cols [][]byte) ([]key
 		// if this is a col we want, add it
 		if (cols != nil && matchesAny(sColK,cols)) {
 			keyVal := keyVal{sColK,v} // pop size off of key
-			retSet = append(retSet, keyVal...)
+			retSet = append(retSet, keyVal)
 		}
 		// load next k,v
 		k, v, err = c.Get(nil, uint(0))
@@ -280,11 +280,8 @@ type keyVal struct {
 func colsBytes(cols []keyVal) ([]byte,error) {
 	retLength := 4 + (8 * len(cols))
 	for _,keyVal := range(cols) {
-		if (len(keyVal) != 2) {
-			return nil,fmt.Errorf()
-		}
-		retLength += len(keyVal[0])
-		retLength += len(keyVal[1])
+		retLength += len(keyVal.k)
+		retLength += len(keyVal.v)
 	}
 	ret := make([]byte,retLength,retLength)
 	written := 0
@@ -316,7 +313,6 @@ func bytesCols(in []byte) ([]keyVal,error) {
 	read += 4
 	ret := make([]keyVal, numCols, numCols)
 	for i := 0 ; i < int(numCols) ; i++ {
-		ret[i] = make([]byte,2,2)
 		keyLen := binary.LittleEndian.Uint32(in[read:])
 		read += 4
 		valLen := binary.LittleEndian.Uint32(in[read:])
