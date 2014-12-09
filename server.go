@@ -82,7 +82,7 @@ func parseTableRowColVals(r *http.Request) [][]byte {
 	for k,v := range r.Form {
 		flotillaArgs[i] = []byte(k)
 		i++
-		flotillaArgs[i] = []byte(v)
+		flotillaArgs[i] = []byte(v[0])
 		i++
 	}
 	return flotillaArgs
@@ -132,7 +132,7 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err := enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 
 }
@@ -163,7 +163,7 @@ func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err := enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 }
 
@@ -172,7 +172,8 @@ func (s *Server) HandleGetColsFast(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowColNames(r)
 	txn,err := s.flotilla.Read()
 	if err != nil {
-		return returnErr(w,err)
+		returnErr(w,err)
+		return
 	}
 	// rowKey is args[0], tableName is args[1]
 	rowKey := flotillaArgs[0]
@@ -180,7 +181,8 @@ func (s *Server) HandleGetColsFast(w http.ResponseWriter, r *http.Request) {
 	colNames := flotillaArgs[2:]
 	dbi,err := txn.DBIOpen(&tableName, flotilla.MDB_CREATE)
 	if err != nil {
-		return returnErr(w,err)
+		returnErr(w,err)
+		return
 	}
 	results,err := getCols(txn, dbi, rowKey, colNames)
 
@@ -200,9 +202,9 @@ func (s *Server) HandleGetColsFast(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-Type","application-json")
 	enc := json.NewEncoder(w)
-	err := enc.Encode(response)
+	err = enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 	return
 }
@@ -219,7 +221,7 @@ func (s *Server) HandlePutRow(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err := enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 }
 
@@ -249,7 +251,7 @@ func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err := enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 	return
 }
@@ -259,14 +261,16 @@ func (s *Server) HandleGetRowFast(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowKey(r)
 	txn,err := s.flotilla.Read()
 	if err != nil {
-		return returnErr(w,err)
+		returnErr(w,err)
+		return
 	}
 	// rowKey is args[0], tableName is args[1]
 	rowKey := flotillaArgs[0]
 	tableName := string(flotillaArgs[1])
 	dbi,err := txn.DBIOpen(&tableName, flotilla.MDB_CREATE)
 	if err != nil {
-		return returnErr(w,err)
+		returnErr(w,err)
+		return
 	}
 	results,err := getCols(txn, dbi, rowKey, nil)
 
@@ -286,9 +290,9 @@ func (s *Server) HandleGetRowFast(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-Type","application-json")
 	enc := json.NewEncoder(w)
-	err := enc.Encode(response)
+	err = enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 	return
 }
@@ -305,12 +309,12 @@ func (s *Server) HandleDelRow(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	err := enc.Encode(response)
 	if err != nil {
-		s.lg.Errorf(err)
+		s.lg.Printf(err.Error())
 	}
 
 }
 
 func returnErr(w http.ResponseWriter, err error) {
 	w.WriteHeader(500)
-	w.Write([]byte(err))
+	w.Write([]byte(err.Error()))
 }
