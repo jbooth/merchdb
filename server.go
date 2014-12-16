@@ -103,7 +103,7 @@ func parseTableRowColNames(r *http.Request) [][]byte {
 	flotillaArgs[0] = rowKey
 	flotillaArgs[1] = tableName
 	i := 1
-	for k,v := range r.Form {
+	for k,_ := range r.Form {
 		flotillaArgs[i] = []byte(k)
 		i++
 	}

@@ -164,8 +164,8 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
 		return err
 	}
 	// scan until we find a key that doesn't match our row
-	k,v,err := c.Get(seekKey,uint(0))
-	sRowK,sColK := keyColNames(k)
+	k,_,err := c.Get(seekKey,uint(0))
+	sRowK,_ := keyColNames(k)
 
 	// if we're still in this row
 	for (bytes.Equal(sRowK,rowKey)) {
@@ -176,11 +176,11 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
 		}
 
 		// load next k,v
-		k, v, err = c.Get(nil, uint(0))
+		k, _, err = c.Get(nil, uint(0))
 		if err != nil {
 			return err
 		}
-		sRowK,sColK = keyColNames(k)
+		sRowK,_ = keyColNames(k)
 	}
 
 	return nil
