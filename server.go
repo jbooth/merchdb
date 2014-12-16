@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"fmt"
 	"encoding/json"
 	"net"
 )
@@ -18,11 +19,11 @@ type Server struct {
 	lg *log.Logger
 }
 
-func NewServer(bindAddr string, dataDir string, flotillaPeers []string) (*Server, error) {
+func NewServer(webAddr string, flotillaAddr string, dataDir string, flotillaPeers []string) (*Server, error) {
 	lg := log.New(os.Stderr, "MerchDB:\t",log.LstdFlags)
 	// start flotilla
 	// peers []string, dataDir string, bindAddr string, ops map[string]Command
-	f,err := flotilla.NewDefaultDB(flotillaPeers, dataDir, bindAddr, ops)
+	f,err := flotilla.NewDefaultDB(flotillaPeers, dataDir, flotillaAddr, ops)
 	if err != nil {
 		return nil,err
 	}
@@ -32,20 +33,27 @@ func NewServer(bindAddr string, dataDir string, flotillaPeers []string) (*Server
 	// start http server
 	h := &http.Server{}
 	h.ErrorLog = lg
-	h.Addr = bindAddr
+	h.Addr = webAddr
 	h.Handler = mux
 	h.ReadTimeout = 1 * time.Second
 	h.WriteTimeout = 1 * time.Second
 
-	httpAddr,err := net.ResolveTCPAddr(bindAddr, "tcp4")
+	httpAddr,err := net.ResolveTCPAddr("tcp4", webAddr)
 	if err != nil {
-		return nil,err
+		return nil,fmt.Errorf("Couldn't resolve webAddr %s : %s", webAddr, err)
 	}
 	httpListen,err := net.ListenTCP("tcp4", httpAddr)
 	if err != nil {
-		return nil,err
+		return nil,fmt.Errorf("Couldn't bind  to httpAddr %s", httpAddr, err)
 	}
 	s :=  &Server{f,h,httpListen,lg}
+
+	mux.HandleFunc("/putCols/", s.HandlePutCols)
+	mux.HandleFunc("/putRow/", s.HandlePutRow)
+	mux.HandleFunc("/getRow/", s.HandleGetRow)
+	mux.HandleFunc("/delRow/", s.HandleDelRow)
+
+
 	go func(s *Server) {
 
 		err := s.http.Serve(httpListen)
@@ -53,7 +61,7 @@ func NewServer(bindAddr string, dataDir string, flotillaPeers []string) (*Server
 		if err != nil {
 			_ = s.flotilla.Close()
 			_ = s.httpListen.Close()
-			s.lg.Fatalf("Error serving http addr %s  : %s", s.http.Addr,err)
+			s.lg.Printf("Error serving http addr %s  : %s", s.http.Addr,err)
 		}
 	}(s)
 	return s,nil
@@ -311,7 +319,6 @@ func (s *Server) HandleDelRow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.lg.Printf(err.Error())
 	}
-
 }
 
 func returnErr(w http.ResponseWriter, err error) {

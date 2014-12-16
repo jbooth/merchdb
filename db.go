@@ -22,7 +22,7 @@ var (
 	PUTROW string = "PutRow"
 	DELROW string = "DelRow"
 
-	ops  = map[string]flotilla.Command {
+	ops map[string]flotilla.Command = map[string]flotilla.Command {
 		GETCOLS: GetCols,
 		PUTCOLS: PutCols,
 		GETROW: GetRow,
