@@ -38,11 +38,13 @@ var (
 
 // outputs: nil, error state
 func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
+	fmt.Printf("Executing putcols! \n")
 	// key bytes are 4 byte keyLen + keyBytes
 	rowKey := args[0]
 	table := string(args[1])
 	dbi,err := txn.DBIOpen(&table, flotilla.MDB_CREATE)
 	if err != nil {
+		txn.Abort()
 		return nil,err
 	}
 	// put our columns
@@ -56,6 +58,7 @@ func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 	}
 	err = putCols(txn, dbi, rowKey, keyVals)
 	if err != nil {
+		txn.Abort()
 		return nil,err
 	}
 	return nobytes,txn.Commit()

@@ -65,7 +65,6 @@ func TestMerchDB(t *testing.T) {
 	for i := 0 ; i < 3 ; i++ {
 		fmt.Printf("Killing server %d\n",i)
 		dbs[i].Close()
-
 	}
 
 }
