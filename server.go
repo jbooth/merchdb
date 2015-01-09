@@ -123,7 +123,7 @@ func parseTableRowKey(r *http.Request) [][]byte {
 	pathSplits := strings.Split(r.URL.Path, "/")
 	tableName := []byte(pathSplits[len(pathSplits) - 2])
 	rowKey := []byte(pathSplits[len(pathSplits) - 1])
-	return [][]byte{tableName,rowKey}
+	return [][]byte{rowKey, tableName}
 }
 
 

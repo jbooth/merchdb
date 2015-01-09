@@ -38,6 +38,7 @@ var (
 
 // outputs: nil, error state
 func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
+	fmt.Printf("PutCols(args = [%#v], txn = [%#v])\n", args, txn)
 	fmt.Printf("Executing putcols! \n")
 	// key bytes are 4 byte keyLen + keyBytes
 	rowKey := args[0]
@@ -71,6 +72,7 @@ func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 
 // outputs: nil, error state
 func PutRow(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
+	fmt.Printf("PutRow(args = [%#v], txn = [%#v])\n", args, txn)
 	// key bytes are 4 byte keyLen + keyBytes
 	rowKey := args[0]
 	table := string(args[1])
@@ -101,13 +103,16 @@ func PutRow(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 // 0: rowKey
 // 1: tableName
 func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
+	fmt.Printf("GetRow(args = [%#v], txn = [%#v])\n", args, txn)
 	rowKey := args[0]
 	table := string(args[1])
+	fmt.Println("Executing getRow, opening dbi")
 	dbi,err := txn.DBIOpen(&table, flotilla.MDB_CREATE)
 	if err != nil {
 		return nil,err
 	}
 	retKeyVals,err := getCols(txn, dbi, rowKey, nil)
+	fmt.Printf("Executing getrow for key %s got vals %+v %s",)
 	if err != nil {
 		return nil,err
 	}
@@ -119,6 +124,7 @@ func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
 // 1: tableName
 // 2-N: cols to fetch
 func GetCols(args [][]byte, txn flotilla.WriteTxn)([]byte,error) {
+	fmt.Printf("GetCols(args = [%#v], txn = [%#v])\n", args, txn)
 	rowKey := args[0]
 	table := string(args[1])
 	var colsWeWant [][]byte = nil
@@ -205,7 +211,7 @@ func putCols(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte, cols []keyVal) e
 // if cols is nil, returns whole row -- otherwise returns only those with colKeys selected in cols
 // returns pairs of (colKey, colVal) with err
 func getCols(txn flotilla.Txn, dbi mdb.DBI, rowKey []byte, cols [][]byte) ([]keyVal, error) {
-
+	fmt.Printf("getCols(txn = [%#v], dbi = [%#v], rowKey = [%#v], cols = [%#v])\n", txn, dbi, rowKey, cols)
 	// key bytes are 4 byte keyLen + keyBytes
 	seekKey := make([]byte, len(rowKey) + 4, len(rowKey) + 4)
 	binary.LittleEndian.PutUint32(seekKey,uint32(len(rowKey)))
@@ -218,6 +224,10 @@ func getCols(txn flotilla.Txn, dbi mdb.DBI, rowKey []byte, cols [][]byte) ([]key
 	}
 	// scan until we find a key that doesn't match our row
 	k,v,err := c.Get(seekKey,uint(0))
+	if err != nil {
+		return nil,err
+	}
+
 	sRowK,sColK := keyColNames(k)
 
 	// if we're still in this row
@@ -276,6 +286,10 @@ func matchesAny(needle []byte, hayStack [][]byte) bool {
 type keyVal struct {
 	k []byte
 	v []byte
+}
+
+func (k *keyVal) String() string {
+	return string(k.k) + "\t" + string(k.v)
 }
 
 // allocates a new []byte to contain the values in cols,
