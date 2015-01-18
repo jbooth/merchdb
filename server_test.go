@@ -12,7 +12,7 @@ func TestMerchDB(t *testing.T) {
 	os.MkdirAll("/tmp/merchdbTest", os.FileMode(0777))
 
 
-	homeDirs := []string{"tmp/merchdbTest/1", "tmp/merchdbTest/2", "tmp/merchdbTest/3"}
+	homeDirs := []string{"/tmp/merchdbTest/1", "/tmp/merchdbTest/2", "/tmp/merchdbTest/3"}
 	webAddrs := []string{"localhost:8001", "localhost:8002", "localhost:8003"}
 	flotAddrs := []string {"localhost:1101", "localhost:1102", "localhost:1103" }
 
@@ -51,15 +51,23 @@ func TestMerchDB(t *testing.T) {
 
 	fmt.Printf("All servers up\n")
 
-	// test some column PUTs and a get
-	http.Get("http://localhost:8001/putCols/table1/row1?col1=val1&col2=val2")
-	http.Get("http://localhost:8002/putCols/table1/row1?col3=val3&col4=val4")
+//	// test some column PUTs and a get
+//	http.Get("http://localhost:8001/putCols/table1/row1?col1=val1&col2=val2")
+//	http.Get("http://localhost:8002/putCols/table1/row1?col3=val3&col4=val4")
+//
+//	row,err := http.Get("http://localHost:8003/getRow/table1/row1")
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	fmt.Print(row)
+//
+//	// test get of bad key
+//	row,err = http.Get("http://localHost:8003/getRow/table1/badrow")
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	fmt.Print(row)
 
-	row,err := http.Get("http://localHost:8003/getRow/table1/row1")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Print(row)
 
 	// shut'em down
 	for i := 0 ; i < 3 ; i++ {

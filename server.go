@@ -13,7 +13,7 @@ import (
 )
 
 type Server struct {
-	flotilla flotilla.DB
+	flotilla flotilla.DefaultOpsDB
 	http *http.Server
 	httpListen net.Listener
 	lg *log.Logger
@@ -234,6 +234,7 @@ func (s *Server) HandlePutRow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
+
 	flotillaArgs := parseTableRowKey(r)
 	result := <- s.flotilla.Command(GETROW, flotillaArgs)
 	response := &ReadResponse{}
@@ -244,6 +245,7 @@ func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resultCols,err := bytesCols(result.Response)
 		if err != nil {
+			s.lg.Printf("Error in getRow: %s",err)
 			response.Ok = false
 			response.Err = err
 		} else {
@@ -261,6 +263,7 @@ func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.lg.Printf(err.Error())
 	}
+
 	return
 }
 

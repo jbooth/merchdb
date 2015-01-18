@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"encoding/binary"
 	"bytes"
-
 )
 
 // db format
@@ -53,9 +52,9 @@ func PutCols(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 	if (len(keyValBytes) % 2 != 0) {
 		return nil,fmt.Errorf("Had odd number of column keyVals on insert to table %s rowKey %s", table, string(rowKey))
 	}
-	keyVals := make([]keyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
+	keyVals := make([]colKeyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
 	for i := 0 ; i < int(len(keyValBytes) / 2) ; i++ {
-		keyVals[i] = keyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
+		keyVals[i] = colKeyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
 	}
 	err = putCols(txn, dbi, rowKey, keyVals)
 	if err != nil {
@@ -87,9 +86,9 @@ func PutRow(args [][]byte, txn flotilla.WriteTxn) ([]byte, error) {
 	if (len(keyValBytes) % 2 != 0) {
 		return nil,fmt.Errorf("Had odd number of column keyVals on insert to table %s rowKey %s", table, string(rowKey))
 	}
-	keyVals := make([]keyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
+	keyVals := make([]colKeyVal, len(keyValBytes) / 2, len(keyValBytes) / 2)
 	for i := 0 ; i < int(len(keyValBytes) / 2) ; i++ {
-		keyVals[i] = keyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
+		keyVals[i] = colKeyVal{keyValBytes[i*2], keyValBytes[(i*2) + 1]}
 	}
 	err = putCols(txn, dbi, rowKey, keyVals)
 	if err != nil {
@@ -112,7 +111,7 @@ func GetRow(args [][]byte, txn flotilla.WriteTxn)([]byte, error) {
 		return nil,err
 	}
 	retKeyVals,err := getCols(txn, dbi, rowKey, nil)
-	fmt.Printf("Executing getrow for key %s got vals %+v %s",)
+	fmt.Printf("Executing getrow for key %s got err %s",string(rowKey), err)
 	if err != nil {
 		return nil,err
 	}
@@ -172,34 +171,58 @@ func delRow(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte) (error) {
 	if err != nil {
 		return err
 	}
-	// scan until we find a key that doesn't match our row
-	k,_,err := c.Get(seekKey,uint(0))
-	sRowK,_ := keyColNames(k)
-
-	// if we're still in this row
-	for (bytes.Equal(sRowK,rowKey)) {
-		// this col belongs to our row, kill it
-		err = txn.Del(dbi, k, nil)
-		if err != nil {
-			return err
-		}
-
-		// load next k,v
-		k, _, err = c.Get(nil, uint(0))
-		if err != nil {
-			return err
-		}
-		sRowK,_ = keyColNames(k)
-	}
-
-	return nil
+	return doForRow(c, rowKey, func(ckv colKeyVal) error {
+		mdbKey := packRowColKey(rowColKey{rowKey,ckv.k})
+		err = txn.Del(dbi,mdbKey,nil)
+		return err
+	})
 }
 
 
-func putCols(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte, cols []keyVal) error {
+// applies forCol to each colKey/colVal pair in a row, bailing early if any error reached
+func doForRow(c flotilla.Cursor, rowKey []byte, forCol func(colKeyVal) error) error {
+	// seek to first item (empty col name) for this rowKey
+	rcSeekKey := rowColKey{ rowKey, make([]byte,0) }
+	seekKey := packRowColKey(rcSeekKey)
+
+	_,_,err := c.Get(seekKey,mdb.SET_RANGE)
+	if err != nil {
+		return fmt.Errorf("Error while seeking in doForRow: %s",err)
+	}
+
+	for {
+		// get current record
+		k,v,err := c.Get(nil, mdb.GET_CURRENT)
+		if err != nil {
+			return fmt.Errorf("Error while fetching in doForRow: %s",err)
+		}
+		// check if we're still on same rowkey
+		rcKey := splitRowColKey(k)
+		if ! bytes.Equal(rowKey, rcKey.rowKey) {
+			// finished this row, bail out
+			return nil
+		}
+		ckVal := colKeyVal{rcKey.colKey,v}
+		err = forCol(ckVal)
+		if err != nil {
+			return fmt.Errorf("Error applying in doForRow: %s",err)
+		}
+
+		// advance cursor
+		_,_,err = c.Get(nil, mdb.NEXT)
+		if err != nil {
+			return fmt.Errorf("Error advancing cursor in doForRow: %s",err)
+		}
+	}
+	// unreachable
+	return nil
+}
+
+func putCols(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte, cols []colKeyVal) error {
 	var err error = nil
 	for _,col := range cols {
-		putKey := packKeyCol(rowKey,col.k)
+		putKey := packRowColKey(rowColKey{ rowKey,col.k})
+		fmt.Printf("Actual put of key %#v val %#v", putKey, col.v)
 		err = txn.Put(dbi,putKey,col.v,uint(0))
 		if err != nil {
 			return err
@@ -210,61 +233,44 @@ func putCols(txn flotilla.WriteTxn, dbi mdb.DBI, rowKey []byte, cols []keyVal) e
 
 // if cols is nil, returns whole row -- otherwise returns only those with colKeys selected in cols
 // returns pairs of (colKey, colVal) with err
-func getCols(txn flotilla.Txn, dbi mdb.DBI, rowKey []byte, cols [][]byte) ([]keyVal, error) {
-	fmt.Printf("getCols(txn = [%#v], dbi = [%#v], rowKey = [%#v], cols = [%#v])\n", txn, dbi, rowKey, cols)
+func getCols(txn flotilla.Txn, dbi mdb.DBI, rowKey []byte, cols [][]byte) ([]colKeyVal, error) {
+	fmt.Printf("getCols(txn = [%#v], dbi = [%#v], rowKey = [%s], cols = [%#v])\n", txn, dbi, string(rowKey), cols)
 	// key bytes are 4 byte keyLen + keyBytes
 	seekKey := make([]byte, len(rowKey) + 4, len(rowKey) + 4)
 	binary.LittleEndian.PutUint32(seekKey,uint32(len(rowKey)))
 	copy(seekKey[4:], rowKey)
 
-	retSet := make([]keyVal,0,0)
+	retSet := make([]colKeyVal,0,0)
 	c,err := txn.CursorOpen(dbi)
-	if err != nil {
-		return nil,err
-	}
-	// scan until we find a key that doesn't match our row
-	k,v,err := c.Get(seekKey,uint(0))
+	defer c.Close()
 	if err != nil {
 		return nil,err
 	}
 
-	sRowK,sColK := keyColNames(k)
-
-	// if we're still in this row
-	for (bytes.Equal(sRowK,rowKey)) {
-		// if this is a col we want, add it
-		if (cols != nil && matchesAny(sColK,cols)) {
-			keyVal := keyVal{sColK,v} // pop size off of key
-			retSet = append(retSet, keyVal)
-		}
-		// load next k,v
-		k, v, err = c.Get(nil, uint(0))
-		if err != nil {
-			return nil, err
-		}
-		sRowK,sColK = keyColNames(k)
-	}
-
+	// todo use doForCols
 	return retSet,nil
 }
 
-// extracts rowKey and columnKey from an mdb key
-func keyColNames(mdbKey []byte) ([]byte,[]byte) {
+type rowColKey struct {
+	rowKey []byte
+	colKey []byte
+}
+
+// packs a rowKey and colKey into a single []byte for an mdb key
+func packRowColKey(in rowColKey) []byte {
+	keyLen := 4 + len(in.rowKey) + 4 + len(in.colKey)
+	mdbKey := make([]byte, keyLen)
+	binary.LittleEndian.PutUint32(mdbKey,uint32(len(in.rowKey)))
+	copy(mdbKey[4:], in.rowKey)
+	copy(mdbKey[4+len(in.rowKey):], in.colKey)
+	return mdbKey
+}
+
+func splitRowColKey(mdbKey []byte) rowColKey {
 	rowKeySize := int(binary.LittleEndian.Uint32(mdbKey))
 	rowKey := mdbKey[4:4+rowKeySize]
 	colKey := mdbKey[4+rowKeySize:]
-	return rowKey, colKey
-}
-
-
-// packs key & col into a single key for mdb
-func packKeyCol(rowKey []byte, colKey []byte) ([]byte) {
-	mdbKey := make([]byte, 4 + len(rowKey) + len(colKey), 4 + len(rowKey) + len(colKey))
-
-	binary.LittleEndian.PutUint32(mdbKey,uint32(len(rowKey)))
-	copy(mdbKey[4:], rowKey)
-	copy(mdbKey[4+len(rowKey):], colKey)
-	return mdbKey
+	return rowColKey{ rowKey, colKey }
 }
 
 func matchesAny(needle []byte, hayStack [][]byte) bool {
@@ -283,18 +289,19 @@ func matchesAny(needle []byte, hayStack [][]byte) bool {
 	return false
 }
 
-type keyVal struct {
+// represents a column within a row
+type colKeyVal struct {
 	k []byte
 	v []byte
 }
 
-func (k *keyVal) String() string {
+func (k *colKeyVal) String() string {
 	return string(k.k) + "\t" + string(k.v)
 }
 
 // allocates a new []byte to contain the values in cols,
 // passed in cols are slices of 2 bytes, { (key,val), (key,val), (key, val) }
-func colsBytes(cols []keyVal) ([]byte,error) {
+func colsBytes(cols []colKeyVal) ([]byte,error) {
 	retLength := 4 + (8 * len(cols))
 	for _,keyVal := range(cols) {
 		retLength += len(keyVal.k)
@@ -323,12 +330,15 @@ func colsBytes(cols []keyVal) ([]byte,error) {
 }
 
 // wraps byte arrays around columns passed to us
-func bytesCols(in []byte) ([]keyVal,error) {
+func bytesCols(in []byte) ([]colKeyVal,error) {
+	if in == nil || len(in) == 0 {
+		return []colKeyVal{},nil
+	}
 	read := 0
 	// read length
 	numCols := binary.LittleEndian.Uint32(in[read:])
 	read += 4
-	ret := make([]keyVal, numCols, numCols)
+	ret := make([]colKeyVal, numCols, numCols)
 	for i := 0 ; i < int(numCols) ; i++ {
 		keyLen := binary.LittleEndian.Uint32(in[read:])
 		read += 4
@@ -336,7 +346,7 @@ func bytesCols(in []byte) ([]keyVal,error) {
 		read += 4
 		k := in[read:read+int(keyLen)]
 		v := in[read:read+int(valLen)]
-		ret[i] = keyVal{k,v}
+		ret[i] = colKeyVal{k,v}
  	}
 	return ret,nil
 }
