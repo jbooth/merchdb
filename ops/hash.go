@@ -1,10 +1,9 @@
-package merchdb
+package ops
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/jbooth/flotilla"
 	mdb "github.com/jbooth/gomdb"
 )
 
@@ -12,23 +11,6 @@ import (
 
 // key:  4 byte uint32 for rowKey length, n bytes of rowKey, remaining bytes are column key
 // val:  column value
-
-var (
-	nobytes []byte = make([]byte, 0, 0)
-	GETCOLS string = "GetCols"
-	PUTCOLS string = "PutCols"
-	GETROW  string = "GetRow"
-	PUTROW  string = "PutRow"
-	DELROW  string = "DelRow"
-
-	ops map[string]flotilla.Command = map[string]flotilla.Command{
-		GETCOLS: GetCols,
-		PUTCOLS: PutCols,
-		GETROW:  GetRow,
-		PUTROW:  PutRow,
-		DELROW:  DelRow,
-	}
-)
 
 // args:
 // 0: row key

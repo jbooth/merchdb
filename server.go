@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jbooth/flotilla"
 	mdb "github.com/jbooth/gomdb"
+	ops "github.com/jbooth/merchdb/ops"
 	"log"
 	"net"
 	"net/http"
@@ -24,7 +25,7 @@ func NewServer(webAddr string, flotillaAddr string, dataDir string, flotillaPeer
 	lg := log.New(os.Stderr, "MerchDB:\t", log.LstdFlags)
 	// start flotilla
 	// peers []string, dataDir string, bindAddr string, ops map[string]Command
-	f, err := flotilla.NewDefaultDB(flotillaPeers, dataDir, flotillaAddr, ops)
+	f, err := flotilla.NewDefaultDB(flotillaPeers, dataDir, flotillaAddr, ops.Ops)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +130,7 @@ func parseTableRowKey(r *http.Request) [][]byte {
 // url is formatted like /tableName/rowKey?col1=val1&col2=val2
 func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowColVals(r)
-	result := <-s.flotilla.Command(PUTCOLS, flotillaArgs)
+	result := <-s.flotilla.Command(ops.PUTCOLS, flotillaArgs)
 	response := &WriteResponse{true, nil}
 	if result.Err != nil {
 		response.Ok = false
@@ -146,7 +147,7 @@ func (s *Server) HandlePutCols(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleGetCols(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowColNames(r)
-	result := <-s.flotilla.Command(GETCOLS, flotillaArgs)
+	result := <-s.flotilla.Command(ops.GETCOLS, flotillaArgs)
 	response := &ReadResponse{}
 
 	if result.Err != nil {
@@ -218,7 +219,7 @@ func (s *Server) HandleGetColsFast(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandlePutRow(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowColVals(r)
-	result := <-s.flotilla.Command(PUTROW, flotillaArgs)
+	result := <-s.flotilla.Command(ops.PUTROW, flotillaArgs)
 	response := &WriteResponse{true, nil}
 	if result.Err != nil {
 		response.Ok = false
@@ -235,7 +236,7 @@ func (s *Server) HandlePutRow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleGetRow(w http.ResponseWriter, r *http.Request) {
 
 	flotillaArgs := parseTableRowKey(r)
-	result := <-s.flotilla.Command(GETROW, flotillaArgs)
+	result := <-s.flotilla.Command(ops.GETROW, flotillaArgs)
 	response := &ReadResponse{}
 
 	if result.Err != nil {
@@ -309,7 +310,7 @@ func (s *Server) HandleGetRowFast(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleDelRow(w http.ResponseWriter, r *http.Request) {
 	flotillaArgs := parseTableRowKey(r)
-	result := <-s.flotilla.Command(DELROW, flotillaArgs)
+	result := <-s.flotilla.Command(ops.DELROW, flotillaArgs)
 	response := &WriteResponse{true, nil}
 	if result.Err != nil {
 		response.Ok = false

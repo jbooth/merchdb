@@ -1,4 +1,4 @@
-package merchdb
+package ops
 
 import (
 	"fmt"
