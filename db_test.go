@@ -19,6 +19,8 @@ func TestDbFunctions(t *testing.T) {
 	}
 	// set up env
 	env, err := mdb.NewEnv()
+	env.SetMaxDBs(mdb.DBI(1024))
+	env.SetMaxReaders(1024)
 	err = env.Open(dbPath, mdb.CREATE, uint(0755))
 	if err != nil {
 		panic(err)
@@ -45,8 +47,17 @@ func TestDbFunctions(t *testing.T) {
 	txn.Commit()
 	// new read txn
 	txn, err = env.BeginTxn(nil, uint(0))
+	if err != nil {
+		panic(err)
+	}
 	dbi, err = txn.DBIOpen(&table, mdb.CREATE)
+	if err != nil {
+		panic(err)
+	}
 	c, err := txn.CursorOpen(dbi)
+	if err != nil {
+		panic(err)
+	}
 	doForRow(c, rowKey1, func(c colKeyVal) error {
 		fmt.Printf("col key %s val %s", string(c.k), string(c.v))
 		return nil

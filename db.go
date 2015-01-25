@@ -181,6 +181,7 @@ func doForRow(c *mdb.Cursor, rowKey []byte, forCol func(colKeyVal) error) error 
 	rcSeekKey := rowColKey{rowKey, make([]byte, 0)}
 	seekKey := packRowColKey(rcSeekKey)
 
+	//fmt.Printf("Seeking to key %X\n", seekKey)
 	_, _, err := c.Get(seekKey, mdb.SET_RANGE)
 	if err != nil {
 		return fmt.Errorf("Error while seeking in doForRow: %s", err)
